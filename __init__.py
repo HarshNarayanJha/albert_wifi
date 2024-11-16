@@ -32,7 +32,7 @@ md_authors = ["@HarshNarayanJha"]
 
 class Plugin(PluginInstance, TriggerQueryHandler):
     WiFiConnection = namedtuple("WiFiConnection", ["name", "uuid", "type", "connected"])
-    WiFiAP = namedtuple("WiFiAP", ["bssid", "signal", "security", "connected"])
+    WiFiAP = namedtuple("WiFiAP", ["ssid", "signal", "security", "connected"])
 
     def __init__(self):
         PluginInstance.__init__(self)
@@ -78,7 +78,7 @@ class Plugin(PluginInstance, TriggerQueryHandler):
             connected = inuse == "*"
             aps.append(
                 self.WiFiAP(
-                    bssid=bssid,
+                    ssid=bssid,
                     signal=bars,
                     security=security,
                     connected=connected,
@@ -87,7 +87,8 @@ class Plugin(PluginInstance, TriggerQueryHandler):
 
         return aps
 
-    def scanConnections(self) -> None:
+    @staticmethod
+    def scanConnections() -> None:
         runDetachedProcess(["nmcli", "device", "wifi", "rescan"])
 
     def handleTriggerQuery(self, query: Query):
@@ -96,10 +97,9 @@ class Plugin(PluginInstance, TriggerQueryHandler):
 
             if query.string.startswith(("list", "ls")):
                 aps = self.getAPs()
-                m = Matcher(query.string.removeprefix("list").removeprefix("ls"))
+                m = Matcher(query.string.removeprefix("list").removeprefix("ls").removeprefix(' '))
 
-                aps = [ap for ap in aps if m.match(ap.bssid)]
-
+                aps = [ap for ap in aps if m.match(ap.ssid)]
                 query.add([self._build_ap_item(ap) for ap in aps])
 
             elif query.string in ("scan", "sc"):
@@ -120,38 +120,44 @@ class Plugin(PluginInstance, TriggerQueryHandler):
 
         return StandardItem(
             id=f"wifi-{command}-{con.uuid}",
-            text=name,
+            text=("º " if con.connected else "") + name,
             subtext=text,
             iconUrls=["xdg:network-wireless"],
             inputActionText=name,
             actions=[
                 Action(
                     "run", text=text, callable=lambda: runDetachedProcess(commandline)
-                )
+                ),
+                Action(
+                    "scan", text="Scan APs", callable=lambda: Plugin.scanConnections()
+                ),
             ],
         )
 
     @staticmethod
     def _build_ap_item(con: WiFiAP) -> Item:
-        name = con.bssid
+        name = con.ssid
         command = "disconnect" if con.connected else "connect"
         text = (
             f"Connect to {name}" if command == "connect" else f"Disconnect from {name}"
         )
-        text += f" {con.signal} {con.security}"
+        # text += f" - {con.security}"
 
-        commandline = ["nmcli", "device", command, con.bssid]
+        commandline = ["nmcli", "device", "wifi", command, con.ssid]
 
         return StandardItem(
-            id=f"wifi-{command}-{con.bssid}",
-            text=name,
+            id=f"wifi-{command}-{con.ssid}",
+            text=("º " if con.connected else "") + name,
             subtext=text,
             iconUrls=["xdg:network-wireless"],
             inputActionText=name,
             actions=[
                 Action(
                     "run", text=text, callable=lambda: runDetachedProcess(commandline)
-                )
+                ),
+                Action(
+                    "scan", text="Scan APs", callable=lambda: Plugin.scanConnections()
+                ),
             ],
         )
 
