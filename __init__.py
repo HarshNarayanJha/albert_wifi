@@ -116,7 +116,7 @@ class Plugin(PluginInstance, TriggerQueryHandler):
         name = con.name
         command = "down" if con.connected else "up"
         text = f"Connect to {name}" if command == "up" else f"Disconnect from {name}"
-        commandline = ["nmcli", "connection", command, con.uuid]
+        commandline = ["nmcli", "connection", command, name]
 
         return StandardItem(
             id=f"wifi-{command}-{con.uuid}",
