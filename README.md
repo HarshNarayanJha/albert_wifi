@@ -1,6 +1,6 @@
 # Albert Wi-Fi
 
-Quickly search through and connect to your wifi networks.
+Quickly search through and connect to your wifi networks on linux and macOS
 
 ### Install
 

@@ -1,9 +1,10 @@
 # Copyright (c) 2024 Harsh Narayan Jha
 
 """
-This plugin allows you to quickly connect available wifi networks and interact with NetworkManager
+This plugin allows you to quickly connect available wifi networks on linux and macOS
 """
 
+import sys
 from collections import namedtuple
 from shutil import which
 import subprocess
@@ -24,10 +25,37 @@ from albert import (  # type: ignore
 md_iid = "2.3"
 md_version = "0.1"
 md_name = "Wi-Fi"
-md_description = "Manage NetworkManager Wi-Fi Connections"
+md_description = "Manage NetworkManager and Airport utility Wi-Fi Connections"
 md_license = "MIT"
 md_url = "https://github.com/HarshNarayanJha/albert_wifi"
 md_authors = ["@HarshNarayanJha"]
+
+
+class WifiPlatform:
+    def __init__(self) -> None:
+        self.platform = sys.platform
+        self.command = ""
+        self.command_not_found_message = ""
+        self.get_wifi_command = ""
+        self.get_ap_command = ""
+
+        match self.platform:
+            case "linux":
+                self.command = "nmcli"
+                self.command_not_found_message = (
+                    "'nmcli' not in $PATH, you sure you are running NetworkManager?"
+                )
+                self.get_wifi_command = f"{self.command} -t connection show"
+                self.get_ap_command = f"{self.command} -t device wifi list"
+            case "darwin":
+                self.command = "airport"
+                self.command_not_found_message = "'airport' not in $PATH, you sure you are running macOS?, Well, you are though..."
+                self.get_wifi_command = f"{self.command} -I"
+                self.get_ap_command = f"{self.command} -s"
+            case _:
+                raise NotImplementedError(
+                    f"Plugin not implemented for platform: {self.platform}"
+                )
 
 
 class Plugin(PluginInstance, TriggerQueryHandler):
@@ -40,27 +68,41 @@ class Plugin(PluginInstance, TriggerQueryHandler):
             self, self.id, self.name, self.description, defaultTrigger="wifi "
         )
 
-        if which("nmcli") is None:
-            raise Exception(
-                "'nmcli' not in $PATH, you sure you are running NetworkManager?"
-            )
+        self.wifi_platform = WifiPlatform()
+
+        if which(self.wifi_platform.command) is None:
+            raise Exception(self.wifi_platform.command_not_found_message)
 
     def getWifiConnections(self) -> List[WiFiConnection]:
         connections = []
 
         output = subprocess.check_output(
-            "nmcli -t connection show", shell=True, encoding="UTF-8"
+            self.wifi_platform.get_wifi_command, shell=True, encoding="UTF-8"
         )
 
-        for conn in output.splitlines():
-            name, uuid, type, dev = conn.split(":")
-            if type in ["802-11-wireless"]:
-                connected = dev != ""
-                connections.append(
-                    self.WiFiConnection(
-                        name=name, uuid=uuid, type="wifi", connected=connected
+        if self.wifi_platform.platform == "linux":
+            for conn in output.splitlines():
+                name, uuid, type, dev = conn.split(":")
+                if type in ["802-11-wireless"]:
+                    connected = dev != ""
+                    connections.append(
+                        self.WiFiConnection(
+                            name=name, uuid=uuid, type="wifi", connected=connected
+                        )
                     )
-                )
+
+        elif self.wifi_platform.platform == "darwin":
+            for line in output.splitlines():
+                if " SSID: " in line:
+                    name = line.split(": ")[1]
+                    connections.append(
+                        self.WiFiConnection(
+                            name=name,
+                            uuid=name,
+                            type="wifi",
+                            connected=True,
+                        )
+                    )
 
         return connections
 
@@ -68,28 +110,54 @@ class Plugin(PluginInstance, TriggerQueryHandler):
         aps = []
 
         output = subprocess.check_output(
-            "nmcli -t device wifi list", shell=True, encoding="UTF-8"
+            self.wifi_platform.get_ap_command, shell=True, encoding="UTF-8"
         )
 
-        for ap in output.splitlines():
-            inuse, bssid, _, _, _, signal, bars, security = (
-                ap.split(":")[:1] + ap.rsplit(":", 7)[1:]
-            )
-            connected = inuse == "*"
-            aps.append(
-                self.WiFiAP(
-                    ssid=bssid,
-                    signal=bars,
-                    security=security,
-                    connected=connected,
+        if self.wifi_platform.platform == "linux":
+            for ap in output.splitlines():
+                inuse, bssid, _, _, _, signal, bars, security = (
+                    ap.split(":")[:1] + ap.rsplit(":", 7)[1:]
                 )
-            )
+                connected = inuse == "*"
+                aps.append(
+                    self.WiFiAP(
+                        ssid=bssid,
+                        signal=bars,
+                        security=security,
+                        connected=connected,
+                    )
+                )
+
+        elif self.wifi_platform.platform == "darwin":
+            for line in output.splitlines()[1:]:
+                fields = line.split()
+                if len(fields) >= 5:
+                    ssid = fields[0]
+                    signal = fields[2]
+                    security = fields[6] if len(fields) > 6 else "NONE"
+                    connected = False  # Need to check against current connection
+                    aps.append(
+                        self.WiFiAP(
+                            ssid=ssid,
+                            signal=signal,
+                            security=security,
+                            connected=connected,
+                        )
+                    )
 
         return aps
 
     @staticmethod
     def scanConnections() -> None:
-        runDetachedProcess(["nmcli", "device", "wifi", "rescan"])
+        if sys.platform == "linux":
+            runDetachedProcess(["nmcli", "device", "wifi", "rescan"])
+        elif sys.platform == "darwin":
+            runDetachedProcess(
+                [
+                    "/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport",
+                    "-s",
+                ]
+            )
 
     def handleTriggerQuery(self, query: Query):
         if query.isValid:
@@ -97,7 +165,11 @@ class Plugin(PluginInstance, TriggerQueryHandler):
 
             if query.string.startswith(("list", "ls")):
                 aps = self.getAPs()
-                m = Matcher(query.string.removeprefix("list").removeprefix("ls").removeprefix(' '))
+                m = Matcher(
+                    query.string.removeprefix("list")
+                    .removeprefix("ls")
+                    .removeprefix(" ")
+                )
 
                 aps = [ap for ap in aps if m.match(ap.ssid)]
                 query.add([self._build_ap_item(ap) for ap in aps])
@@ -116,7 +188,18 @@ class Plugin(PluginInstance, TriggerQueryHandler):
         name = con.name
         command = "down" if con.connected else "up"
         text = f"Connect to {name}" if command == "up" else f"Disconnect from {name}"
-        commandline = ["nmcli", "connection", command, name]
+
+        if sys.platform == "linux":
+            commandline = ["nmcli", "connection", command, name]
+        elif sys.platform == "darwin":
+            networksetup_path = "/usr/sbin/networksetup"
+            if command == "up":
+                commandline = [networksetup_path, "-setairportpower", "en0", "on"]
+                commandline.extend(
+                    [networksetup_path, "-setairportnetwork", "en0", name]
+                )
+            else:
+                commandline = [networksetup_path, "-setairportpower", "en0", "off"]
 
         return StandardItem(
             id=f"wifi-{command}-{con.uuid}",
@@ -141,9 +224,18 @@ class Plugin(PluginInstance, TriggerQueryHandler):
         text = (
             f"Connect to {name}" if command == "connect" else f"Disconnect from {name}"
         )
-        # text += f" - {con.security}"
 
-        commandline = ["nmcli", "device", "wifi", command, con.ssid]
+        if sys.platform == "linux":
+            commandline = ["nmcli", "device", "wifi", command, con.ssid]
+        elif sys.platform == "darwin":
+            networksetup_path = "/usr/sbin/networksetup"
+            if command == "connect":
+                commandline = [networksetup_path, "-setairportpower", "en0", "on"]
+                commandline.extend(
+                    [networksetup_path, "-setairportnetwork", "en0", name]
+                )
+            else:
+                commandline = [networksetup_path, "-setairportpower", "en0", "off"]
 
         return StandardItem(
             id=f"wifi-{command}-{con.ssid}",
