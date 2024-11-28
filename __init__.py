@@ -48,8 +48,11 @@ class WifiPlatform:
                 self.get_wifi_command = f"{self.command} -t connection show"
                 self.get_ap_command = f"{self.command} -t device wifi list"
             case "darwin":
-                self.command = "airport"
-                self.command_not_found_message = "'airport' not in $PATH, you sure you are running macOS?, Well, you are though..."
+                self.command = "/System/Library/PrivateFrameworks/Apple80211.framework/Versions/A/Resources/airport"
+                self.command_not_found_message = (
+                    "'airport' not in found at '/System/Library/PrivateFrameworks/Apple80211.framework/Versions/A/Resources/airport',\
+                    you sure you are running macOS?, Well, you are though..."
+                )
                 self.get_wifi_command = f"{self.command} -I"
                 self.get_ap_command = f"{self.command} -s"
             case _:
