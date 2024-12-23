@@ -104,6 +104,16 @@ class Plugin(PluginInstance, TriggerQueryHandler):
 
             elif query.string in ("scan", "sc"):
                 self.scanConnections()
+                query.add(
+                    [
+                        StandardItem(
+                            id="wifi-scan",
+                            text="Scanning for Access Points",
+                            subtext="Scanning initiated. Do `wifi ls` again for updated list",
+                            iconUrls=["xdg:network-wireless"],
+                        )
+                    ]
+                )
 
             else:
                 connections = self.getWifiConnections()
