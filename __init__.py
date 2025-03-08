@@ -21,8 +21,8 @@ from albert import (  # type: ignore
     runDetachedProcess,
 )
 
-md_iid = "2.3"
-md_version = "0.1"
+md_iid = "3.0"
+md_version = "1.0"
 md_name = "Wi-Fi"
 md_description = "Manage NetworkManager Wi-Fi Connections"
 md_license = "MIT"
@@ -36,14 +36,18 @@ class Plugin(PluginInstance, TriggerQueryHandler):
 
     def __init__(self):
         PluginInstance.__init__(self)
-        TriggerQueryHandler.__init__(
-            self, self.id, self.name, self.description, defaultTrigger="wifi "
-        )
+        TriggerQueryHandler.__init__(self)
 
         if which("nmcli") is None:
             raise Exception(
                 "'nmcli' not in $PATH, you sure you are running NetworkManager?"
             )
+
+    def synopsis(self, query):
+        return "<network name>"
+
+    def defaultTrigger(self):
+        return "wifi "
 
     def getWifiConnections(self) -> List[WiFiConnection]:
         connections = []
