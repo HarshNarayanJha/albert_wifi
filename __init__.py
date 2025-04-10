@@ -4,19 +4,18 @@
 This plugin allows you to quickly connect available wifi networks and interact with NetworkManager
 """
 
+import subprocess
 from collections import namedtuple
 from shutil import which
-import subprocess
-
-from typing import List
+from typing import Any, List
 
 from albert import (  # type: ignore
     Action,
     Item,
     Matcher,
+    PluginInstance,
     Query,
     StandardItem,
-    PluginInstance,
     TriggerQueryHandler,
     runDetachedProcess,
 )
@@ -26,6 +25,7 @@ md_version = "1.0"
 md_name = "Wi-Fi"
 md_description = "Manage NetworkManager Wi-Fi Connections"
 md_license = "MIT"
+md_bin_dependencies = ["nmcli"]
 md_url = "https://github.com/HarshNarayanJha/albert_wifi"
 md_authors = ["@HarshNarayanJha"]
 
@@ -39,9 +39,7 @@ class Plugin(PluginInstance, TriggerQueryHandler):
         TriggerQueryHandler.__init__(self)
 
         if which("nmcli") is None:
-            raise Exception(
-                "'nmcli' not in $PATH, you sure you are running NetworkManager?"
-            )
+            raise Exception("'nmcli' not in $PATH, you sure you are running NetworkManager?")
 
     def synopsis(self, query):
         return "<network name>"
@@ -60,11 +58,7 @@ class Plugin(PluginInstance, TriggerQueryHandler):
             name, uuid, type, dev = conn.split(":")
             if type in ["802-11-wireless"]:
                 connected = dev != ""
-                connections.append(
-                    self.WiFiConnection(
-                        name=name, uuid=uuid, type="wifi", connected=connected
-                    )
-                )
+                connections.append(self.WiFiConnection(name=name, uuid=uuid, type="wifi", connected=connected))
 
         return connections
 
@@ -76,9 +70,7 @@ class Plugin(PluginInstance, TriggerQueryHandler):
         )
 
         for ap in output.splitlines():
-            inuse, bssid, _, _, _, signal, bars, security = (
-                ap.split(":")[:1] + ap.rsplit(":", 7)[1:]
-            )
+            inuse, bssid, _, _, _, signal, bars, security = ap.split(":")[:1] + ap.rsplit(":", 7)[1:]
             connected = inuse == "*"
             aps.append(
                 self.WiFiAP(
@@ -101,7 +93,7 @@ class Plugin(PluginInstance, TriggerQueryHandler):
 
             if query.string.startswith(("list", "ls")):
                 aps = self.getAPs()
-                m = Matcher(query.string.removeprefix("list").removeprefix("ls").removeprefix(' '))
+                m = Matcher(query.string.removeprefix("list").removeprefix("ls").removeprefix(" "))
 
                 aps = [ap for ap in aps if m.match(ap.ssid)]
                 query.add([self._build_ap_item(ap) for ap in aps])
@@ -139,12 +131,8 @@ class Plugin(PluginInstance, TriggerQueryHandler):
             iconUrls=["xdg:network-wireless"],
             inputActionText=name,
             actions=[
-                Action(
-                    "run", text=text, callable=lambda: runDetachedProcess(commandline)
-                ),
-                Action(
-                    "scan", text="Scan APs", callable=lambda: Plugin.scanConnections()
-                ),
+                Action("run", text=text, callable=lambda: runDetachedProcess(commandline)),
+                Action("scan", text="Scan APs", callable=lambda: Plugin.scanConnections()),
             ],
         )
 
@@ -166,12 +154,8 @@ class Plugin(PluginInstance, TriggerQueryHandler):
             iconUrls=["xdg:network-wireless"],
             inputActionText=name,
             actions=[
-                Action(
-                    "run", text=text, callable=lambda: runDetachedProcess(commandline)
-                ),
-                Action(
-                    "scan", text="Scan APs", callable=lambda: Plugin.scanConnections()
-                ),
+                Action("run", text=text, callable=lambda: runDetachedProcess(commandline)),
+                Action("scan", text="Scan APs", callable=lambda: Plugin.scanConnections()),
             ],
         )
 
