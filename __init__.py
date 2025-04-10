@@ -38,6 +38,8 @@ class Plugin(PluginInstance, TriggerQueryHandler):
         PluginInstance.__init__(self)
         TriggerQueryHandler.__init__(self)
 
+        self._symbolic_icon: bool | Any = self.readConfig("symbolic_icon", bool)
+
         if which("nmcli") is None:
             raise Exception("'nmcli' not in $PATH, you sure you are running NetworkManager?")
 
@@ -117,8 +119,7 @@ class Plugin(PluginInstance, TriggerQueryHandler):
 
                 query.add([self._build_connection_item(con) for con in connections])
 
-    @staticmethod
-    def _build_connection_item(con: WiFiConnection) -> Item:
+    def _build_connection_item(self, con: WiFiConnection) -> Item:
         name = con.name
         command = "down" if con.connected else "up"
         text = f"Connect to {name}" if command == "up" else f"Disconnect from {name}"
@@ -128,7 +129,7 @@ class Plugin(PluginInstance, TriggerQueryHandler):
             id=f"wifi-{command}-{con.uuid}",
             text=("º " if con.connected else "") + name,
             subtext=text,
-            iconUrls=["xdg:network-wireless"],
+            iconUrls=["xdg:network-wireless-symbolic" if self._symbolic_icon else "xdg:network-wireless"],
             inputActionText=name,
             actions=[
                 Action("run", text=text, callable=lambda: runDetachedProcess(commandline)),
@@ -136,14 +137,11 @@ class Plugin(PluginInstance, TriggerQueryHandler):
             ],
         )
 
-    @staticmethod
-    def _build_ap_item(con: WiFiAP) -> Item:
+    def _build_ap_item(self, con: WiFiAP) -> Item:
         name = con.ssid
         command = "disconnect" if con.connected else "connect"
-        text = (
-            f"Connect to {name}" if command == "connect" else f"Disconnect from {name}"
-        )
-        # text += f" - {con.security}"
+        text = f"Connect to {name}" if command == "connect" else f"Disconnect from {name}"
+        text += f" | {con.security} | {con.signal}"
 
         commandline = ["nmcli", "device", "wifi", command, con.ssid]
 
@@ -151,7 +149,7 @@ class Plugin(PluginInstance, TriggerQueryHandler):
             id=f"wifi-{command}-{con.ssid}",
             text=("º " if con.connected else "") + name,
             subtext=text,
-            iconUrls=["xdg:network-wireless"],
+            iconUrls=["xdg:network-wireless-symbolic" if self._symbolic_icon else "xdg:network-wireless"],
             inputActionText=name,
             actions=[
                 Action("run", text=text, callable=lambda: runDetachedProcess(commandline)),
@@ -159,11 +157,17 @@ class Plugin(PluginInstance, TriggerQueryHandler):
             ],
         )
 
+    @property
+    def symbolic_icon(self) -> bool:
+        return self._symbolic_icon
+
+    @symbolic_icon.setter
+    def symbolic_icon(self, value: bool) -> None:
+        self._symbolic_icon = value
+        self.writeConfig("symbolic_icon", value)
+
     def configWidget(self):
         return [
-            {
-                "type": "label",
-                "text": str(__doc__).strip(),
-                "widget_properties": {"textFormat": "Qt::MarkdownText"},
-            }
+            {"type": "label", "text": str(__doc__).strip(), "widget_properties": {"textFormat": "Qt::MarkdownText"}},
+            {"type": "checkbox", "property": "symbolic_icon", "label": "Use symbolic icon for wifi", "default": False},
         ]
