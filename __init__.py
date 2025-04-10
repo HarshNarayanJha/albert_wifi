@@ -21,7 +21,7 @@ from albert import (  # type: ignore
 )
 
 md_iid = "3.0"
-md_version = "1.0"
+md_version = "1.1"
 md_name = "Wi-Fi"
 md_description = "Manage NetworkManager Wi-Fi Connections"
 md_license = "MIT"
