@@ -50,9 +50,9 @@ class Plugin(PluginInstance, TriggerQueryHandler):
     def getWifiConnections(self) -> List[WiFiConnection]:
         connections = []
 
-        output = subprocess.check_output(
-            "nmcli -t connection show", shell=True, encoding="UTF-8"
-        )
+        Plugin.scanConnections()
+
+        output = subprocess.check_output("nmcli -t connection show", shell=True, encoding="UTF-8")
 
         for conn in output.splitlines():
             name, uuid, type, dev = conn.split(":")
@@ -65,9 +65,9 @@ class Plugin(PluginInstance, TriggerQueryHandler):
     def getAPs(self) -> List[WiFiAP]:
         aps = []
 
-        output = subprocess.check_output(
-            "nmcli -t device wifi list", shell=True, encoding="UTF-8"
-        )
+        Plugin.scanConnections()
+
+        output = subprocess.check_output("nmcli -t device wifi list", shell=True, encoding="UTF-8")
 
         for ap in output.splitlines():
             inuse, bssid, _, _, _, signal, bars, security = ap.split(":")[:1] + ap.rsplit(":", 7)[1:]
