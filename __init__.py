@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Harsh Narayan Jha
+# Copyright (c) 2025 Harsh Narayan Jha
 
 """
 This plugin allows you to quickly connect available wifi networks and interact with NetworkManager
@@ -7,27 +7,30 @@ This plugin allows you to quickly connect available wifi networks and interact w
 import subprocess
 from collections import namedtuple
 from shutil import which
-from typing import Any, List
+from typing import cast, override
 
-from albert import (  # type: ignore
+from albert import (  # pyright: ignore[reportMissingModuleSource]
     Action,
     Item,
+    MatchConfig,
     Matcher,
     PluginInstance,
     Query,
     StandardItem,
     TriggerQueryHandler,
+    makeThemeIcon,
     runDetachedProcess,
 )
 
-md_iid = "3.0"
-md_version = "1.1"
+md_iid = "4.0"
+md_version = "2.0"
 md_name = "Wi-Fi"
 md_description = "Manage NetworkManager Wi-Fi Connections"
 md_license = "MIT"
 md_bin_dependencies = ["nmcli"]
 md_url = "https://github.com/HarshNarayanJha/albert_wifi"
 md_authors = ["@HarshNarayanJha"]
+md_maintainers = ["@HarshNarayanJha"]
 
 
 class Plugin(PluginInstance, TriggerQueryHandler):
@@ -38,21 +41,35 @@ class Plugin(PluginInstance, TriggerQueryHandler):
         PluginInstance.__init__(self)
         TriggerQueryHandler.__init__(self)
 
-        self._symbolic_icon: bool | Any = self.readConfig("symbolic_icon", bool)
+        self.fuzzy: bool = False
+
+        self._symbolic_icon: bool
+        if (symbolic_icon := self.readConfig("symbolic_icon", bool)) is None:
+            self._symbolic_icon = True
+        else:
+            self._symbolic_icon = cast(bool, symbolic_icon)
 
         if which("nmcli") is None:
             raise Exception("'nmcli' not in $PATH, you sure you are running NetworkManager?")
 
+    @override
+    def supportsFuzzyMatching(self):
+        return True
+
+    @override
+    def setFuzzyMatching(self, enabled: bool):
+        self.fuzzy = enabled
+
+    @override
     def synopsis(self, query):
         return "<network name>"
 
+    @override
     def defaultTrigger(self):
         return "wifi "
 
-    def getWifiConnections(self) -> List[WiFiConnection]:
+    def getWifiConnections(self) -> list[WiFiConnection]:
         connections = []
-
-        Plugin.scanConnections()
 
         output = subprocess.check_output("nmcli -t connection show", shell=True, encoding="UTF-8")
 
@@ -64,10 +81,8 @@ class Plugin(PluginInstance, TriggerQueryHandler):
 
         return connections
 
-    def getAPs(self) -> List[WiFiAP]:
+    def getAPs(self) -> list[WiFiAP]:
         aps = []
-
-        Plugin.scanConnections()
 
         output = subprocess.check_output("nmcli -t device wifi list", shell=True, encoding="UTF-8")
 
@@ -91,11 +106,14 @@ class Plugin(PluginInstance, TriggerQueryHandler):
 
     def handleTriggerQuery(self, query: Query):
         if query.isValid:
-            m = Matcher(query.string)
+            m = Matcher(query.string, MatchConfig(fuzzy=self.fuzzy))
 
             if query.string.startswith(("list", "ls")):
                 aps = self.getAPs()
-                m = Matcher(query.string.removeprefix("list").removeprefix("ls").removeprefix(" "))
+                m = Matcher(
+                    query.string.removeprefix("list").removeprefix("ls").removeprefix(" "),
+                    MatchConfig(fuzzy=self.fuzzy),
+                )
 
                 aps = [ap for ap in aps if m.match(ap.ssid)]
                 query.add([self._build_ap_item(ap) for ap in aps])
@@ -103,14 +121,14 @@ class Plugin(PluginInstance, TriggerQueryHandler):
             elif query.string in ("scan", "sc"):
                 self.scanConnections()
                 query.add(
-                    [
-                        StandardItem(
-                            id="wifi-scan",
-                            text="Scanning for Access Points",
-                            subtext="Scanning initiated. Do `wifi ls` again for updated list",
-                            iconUrls=["xdg:network-wireless"],
-                        )
-                    ]
+                    StandardItem(
+                        id="wifi-scan",
+                        text="Scanning for Access Points",
+                        subtext="Scanning initiated. Do `wifi ls` again for updated list",
+                        icon_factory=lambda: makeThemeIcon(
+                            "network-wireless-symbolic" if self._symbolic_icon else "network-wireless"
+                        ),
+                    )
                 )
 
             else:
@@ -129,8 +147,10 @@ class Plugin(PluginInstance, TriggerQueryHandler):
             id=f"wifi-{command}-{con.uuid}",
             text=("º " if con.connected else "") + name,
             subtext=text,
-            iconUrls=["xdg:network-wireless-symbolic" if self._symbolic_icon else "xdg:network-wireless"],
-            inputActionText=name,
+            icon_factory=lambda: makeThemeIcon(
+                "network-wireless-symbolic" if self._symbolic_icon else "network-wireless"
+            ),
+            input_action_text=name,
             actions=[
                 Action("run", text=text, callable=lambda: runDetachedProcess(commandline)),
                 Action("scan", text="Scan APs", callable=lambda: Plugin.scanConnections()),
@@ -139,18 +159,22 @@ class Plugin(PluginInstance, TriggerQueryHandler):
 
     def _build_ap_item(self, con: WiFiAP) -> Item:
         name = con.ssid
-        command = "disconnect" if con.connected else "connect"
-        text = f"Connect to {name}" if command == "connect" else f"Disconnect from {name}"
+        text = f"Connect to {name}" if not con.connected else f"Disconnect from {name}"
         text += f" | {con.security} | {con.signal}"
 
-        commandline = ["nmcli", "device", "wifi", command, con.ssid]
+        if not con.connected:
+            commandline = ["nmcli", "device", "wifi", "connect", con.ssid]
+        else:
+            commandline = ["nmcli", "connection", "down", con.ssid]
 
         return StandardItem(
-            id=f"wifi-{command}-{con.ssid}",
+            id=f"wifi-{not con.connected}-{con.ssid}",
             text=("º " if con.connected else "") + name,
             subtext=text,
-            iconUrls=["xdg:network-wireless-symbolic" if self._symbolic_icon else "xdg:network-wireless"],
-            inputActionText=name,
+            icon_factory=lambda: makeThemeIcon(
+                "network-wireless-symbolic" if self._symbolic_icon else "network-wireless"
+            ),
+            input_action_text=name,
             actions=[
                 Action("run", text=text, callable=lambda: runDetachedProcess(commandline)),
                 Action("scan", text="Scan APs", callable=lambda: Plugin.scanConnections()),
