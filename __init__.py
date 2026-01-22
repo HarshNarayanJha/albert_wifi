@@ -76,6 +76,10 @@ class Plugin(PluginInstance, GeneratorQueryHandler):
     def defaultTrigger(self):
         return "wifi "
 
+    def makeIcon(self):
+        # return Icon.theme("network-wireless-symbolic" if self._symbolic_icon else "network-wireless")
+        return Icon.grapheme("🛜")
+
     def getWifiConnections(self) -> list[WiFiConnection]:
         connections = []
 
@@ -139,9 +143,7 @@ class Plugin(PluginInstance, GeneratorQueryHandler):
                     id="wifi-scan",
                     text="Scanning for Access Points",
                     subtext="Scanning initiated. Do `wifi ls` again for updated list",
-                    icon_factory=lambda: Icon.theme(
-                        "network-wireless-symbolic" if self._symbolic_icon else "network-wireless"
-                    ),
+                    icon_factory=lambda: self.makeIcon(),
                 )
             ]
 
@@ -163,7 +165,7 @@ class Plugin(PluginInstance, GeneratorQueryHandler):
             id=f"wifi-{command}-{con.uuid}",
             text=("º " if con.connected else "") + name,
             subtext=text,
-            icon_factory=lambda: Icon.theme("network-wireless-symbolic" if self._symbolic_icon else "network-wireless"),
+            icon_factory=lambda: self.makeIcon(),
             input_action_text=name,
             actions=[
                 Action("run", text=text, callable=lambda: runDetachedProcess(commandline)),
@@ -185,7 +187,7 @@ class Plugin(PluginInstance, GeneratorQueryHandler):
             id=f"wifi-{not con.connected}-{con.ssid}",
             text=("º " if con.connected else "") + name,
             subtext=text,
-            icon_factory=lambda: Icon.theme("network-wireless-symbolic" if self._symbolic_icon else "network-wireless"),
+            icon_factory=lambda: self.makeIcon(),
             input_action_text=name,
             actions=[
                 Action("run", text=text, callable=lambda: runDetachedProcess(commandline)),
