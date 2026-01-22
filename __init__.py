@@ -1,29 +1,36 @@
-# Copyright (c) 2025 Harsh Narayan Jha
+# Copyright (c) 2026 Harsh Narayan Jha
 
 """
-This plugin allows you to quickly connect available wifi networks and interact with NetworkManager
+This plugin allows you to quickly connect available wifi networks and interact with NetworkManager.
+
+Type the trigger (default `wifi`) to list all known networks. Select any item to connect/disconnect to that network.
+Trigger followed by `list` or `ls` will list available networks. There is a bug right now that will duplicate any known network if connected through this list. Use the previous list to connect to know networks.
+
+Typing the trigger followed by `scan` or `sc` will initiate a scan for available networks. Check again with `wifi ls`
+
+---
 """
 
 import subprocess
 from collections import namedtuple
 from shutil import which
-from typing import cast, override
+from typing import Generator, cast, override
 
-from albert import (  # pyright: ignore[reportMissingModuleSource]
+from albert import (
     Action,
+    GeneratorQueryHandler,
+    Icon,
     Item,
     MatchConfig,
     Matcher,
     PluginInstance,
-    Query,
+    QueryContext,
     StandardItem,
-    TriggerQueryHandler,
-    makeThemeIcon,
     runDetachedProcess,
 )
 
-md_iid = "4.0"
-md_version = "2.0"
+md_iid = "5.0"
+md_version = "3.0"
 md_name = "Wi-Fi"
 md_description = "Manage NetworkManager Wi-Fi Connections"
 md_license = "MIT"
@@ -33,13 +40,14 @@ md_authors = ["@HarshNarayanJha"]
 md_maintainers = ["@HarshNarayanJha"]
 
 
-class Plugin(PluginInstance, TriggerQueryHandler):
+class Plugin(PluginInstance, GeneratorQueryHandler):
     WiFiConnection = namedtuple("WiFiConnection", ["name", "uuid", "type", "connected"])
     WiFiAP = namedtuple("WiFiAP", ["ssid", "signal", "security", "connected"])
 
+    @override
     def __init__(self):
         PluginInstance.__init__(self)
-        TriggerQueryHandler.__init__(self)
+        GeneratorQueryHandler.__init__(self)
 
         self.fuzzy: bool = False
 
@@ -104,38 +112,46 @@ class Plugin(PluginInstance, TriggerQueryHandler):
     def scanConnections() -> None:
         runDetachedProcess(["nmcli", "device", "wifi", "rescan"])
 
-    def handleTriggerQuery(self, query: Query):
-        if query.isValid:
-            m = Matcher(query.string, MatchConfig(fuzzy=self.fuzzy))
+    @override
+    def items(self, context: QueryContext) -> Generator[list[Item]]:
+        if not context.isValid:
+            return
 
-            if query.string.startswith(("list", "ls")):
-                aps = self.getAPs()
-                m = Matcher(
-                    query.string.removeprefix("list").removeprefix("ls").removeprefix(" "),
-                    MatchConfig(fuzzy=self.fuzzy),
+        m = Matcher(context.query, MatchConfig(fuzzy=self.fuzzy))
+        items: list[Item] = []
+
+        if context.query.startswith(("list", "ls")):
+            aps = self.getAPs()
+            m = Matcher(
+                context.query.removeprefix("list").removeprefix("ls").removeprefix(" "),
+                MatchConfig(fuzzy=self.fuzzy),
+            )
+
+            aps = [ap for ap in aps if m.match(ap.ssid)]
+
+            items = [self._build_ap_item(ap) for ap in aps]
+
+        elif context.query.startswith(("scan", "sc")):
+            self.scanConnections()
+
+            items = [
+                StandardItem(
+                    id="wifi-scan",
+                    text="Scanning for Access Points",
+                    subtext="Scanning initiated. Do `wifi ls` again for updated list",
+                    icon_factory=lambda: Icon.theme(
+                        "network-wireless-symbolic" if self._symbolic_icon else "network-wireless"
+                    ),
                 )
+            ]
 
-                aps = [ap for ap in aps if m.match(ap.ssid)]
-                query.add([self._build_ap_item(ap) for ap in aps])
+        else:
+            connections = self.getWifiConnections()
+            connections = [con for con in connections if m.match(con.name)]
 
-            elif query.string in ("scan", "sc"):
-                self.scanConnections()
-                query.add(
-                    StandardItem(
-                        id="wifi-scan",
-                        text="Scanning for Access Points",
-                        subtext="Scanning initiated. Do `wifi ls` again for updated list",
-                        icon_factory=lambda: makeThemeIcon(
-                            "network-wireless-symbolic" if self._symbolic_icon else "network-wireless"
-                        ),
-                    )
-                )
+            items = [self._build_connection_item(con) for con in connections]
 
-            else:
-                connections = self.getWifiConnections()
-                connections = [con for con in connections if m.match(con.name)]
-
-                query.add([self._build_connection_item(con) for con in connections])
+        yield items
 
     def _build_connection_item(self, con: WiFiConnection) -> Item:
         name = con.name
@@ -147,9 +163,7 @@ class Plugin(PluginInstance, TriggerQueryHandler):
             id=f"wifi-{command}-{con.uuid}",
             text=("º " if con.connected else "") + name,
             subtext=text,
-            icon_factory=lambda: makeThemeIcon(
-                "network-wireless-symbolic" if self._symbolic_icon else "network-wireless"
-            ),
+            icon_factory=lambda: Icon.theme("network-wireless-symbolic" if self._symbolic_icon else "network-wireless"),
             input_action_text=name,
             actions=[
                 Action("run", text=text, callable=lambda: runDetachedProcess(commandline)),
@@ -171,9 +185,7 @@ class Plugin(PluginInstance, TriggerQueryHandler):
             id=f"wifi-{not con.connected}-{con.ssid}",
             text=("º " if con.connected else "") + name,
             subtext=text,
-            icon_factory=lambda: makeThemeIcon(
-                "network-wireless-symbolic" if self._symbolic_icon else "network-wireless"
-            ),
+            icon_factory=lambda: Icon.theme("network-wireless-symbolic" if self._symbolic_icon else "network-wireless"),
             input_action_text=name,
             actions=[
                 Action("run", text=text, callable=lambda: runDetachedProcess(commandline)),
@@ -190,6 +202,7 @@ class Plugin(PluginInstance, TriggerQueryHandler):
         self._symbolic_icon = value
         self.writeConfig("symbolic_icon", value)
 
+    @override
     def configWidget(self):
         return [
             {"type": "label", "text": str(__doc__).strip(), "widget_properties": {"textFormat": "Qt::MarkdownText"}},
